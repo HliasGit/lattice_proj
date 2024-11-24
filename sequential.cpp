@@ -2,7 +2,7 @@
 
 int main(){
 
-    int size = 1024*1024;
+    int size = 1024*1024*8;
     int seed = 100;
 
     std::vector<int> V(size);
@@ -30,8 +30,9 @@ int main(){
     auto end = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed_seconds = end-start;
 
+    std::cout << "Vector size: " << size << std::endl;
     std::cout << "Minimum: " << min << std::endl;
-    std::cout << "Elapsed time: " << elapsed_seconds.count() << "s" << std::endl;
+    std::cout << "Time: " << elapsed_seconds.count() << "s" << std::endl;
 
 }
 

@@ -6,12 +6,20 @@ __global__ void vec_min(int *a, int *b, int size) {
 
     int tid = threadIdx.x;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
 
     // Load data into shared memory
-    sdata[tid] = (i < size) ? a[i] : INT_MAX;
+    sdata[tid] = INT_MAX;
     __syncthreads();
 
-    // Block reduction
+
+    for(int j = i; j<size; j+=stride){
+        sdata[tid] = (sdata[tid] < a[j]) ? sdata[tid] : a[j];
+    }
+    __syncthreads();
+
+
+    // Block reductionti
     for (unsigned int s = blockDim.x / 2; s > 0; s>>=1) {
         if (tid < s) {
             sdata[tid] = (sdata[tid] < sdata[tid + s]) ? sdata[tid] : sdata[tid + s];
@@ -32,25 +40,27 @@ int main(){
     cudaGetDeviceCount(&deviceCount);
 
     // sizes
-    int vecSize = 1024*1024;
+    int vecSize = 1024*1024*8;
     int n_threads = 1024;
-    int n_blocks = vecSize/n_threads;
+    int n_blocks = 1024;
 
     // Allocate memory for GPU
     int *A;
     int *B;
 
     // Allocate for host
-    int data[vecSize];
-    int result[n_threads];
+    int *data = new int[vecSize];
+    int *result = new int[n_blocks];
+
+    std::cout << "Vector size: " << vecSize << std::endl;
 
     // Initialize data
-    for(int i=0; i<vecSize; i++){
-        data[i] = i+4;
+    for (int i = 0; i < vecSize; i++) {
+        data[i] = i + 4;
     }
 
     // Set a minimum somewhere
-    data[124737] = 1;
+    data[1024*1024*8-10] = 1;
 
     // Allocate CUDA memory
     cudaMalloc(&A, vecSize*sizeof(int));
