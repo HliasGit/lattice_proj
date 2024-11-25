@@ -29,4 +29,4 @@ def generate_instance(n: int):
 
 
 if __name__ == '__main__':
-    generate_instance(n=2)
+    generate_instance(n=5)
