@@ -6,6 +6,7 @@
 
 # Variables
 CC = g++
+BIN_FOL = bin
 NVCC = nvcc
 FILE_PAR = gen_parallel_algo.cu
 OUT_PAR = parallel_mio
@@ -20,16 +21,16 @@ OUT_EXE2 = exe2
 all: sequential parallel_mio fixpoint
 
 sequential: $(FILE_SEQ)
-	$(CC) $(FILE_SEQ) -o $(OUT_SEQ)
+	$(CC) $(FILE_SEQ) -o $(BIN_FOL)/$(OUT_SEQ)
 
 parallel_mio: $(FILE_PAR)
-	$(NVCC) $(FILE_PAR) -o $(OUT_PAR)
+	$(NVCC) $(FILE_PAR) -o $(BIN_FOL)/$(OUT_PAR)
 
 fixpoint: $(FILE_FIX)
-	$(NVCC) $(FILE_FIX) -o $(OUT_FIX)
+	$(NVCC) $(FILE_FIX) -o $(BIN_FOL)/$(OUT_FIX)
 
 exercise_2: $(FILE_EXE2)
-	$(NVCC) $(FILE_EXE2) -o $(OUT_EXE2)
+	$(NVCC) $(FILE_EXE2) -o $(BIN_FOL)/$(OUT_EXE2)
 
 clean:
-	rm -f $(OUT_SEQ) $(OUT_PAR) $(OUT_FIX)
+	rm -rf $(BIN_FOL)/
