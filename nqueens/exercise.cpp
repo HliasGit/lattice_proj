@@ -9,10 +9,10 @@
 struct Node {
   int depth; // depth in the tree
   std::vector<int> value;// configration for that node
-  std::vector<std::vector<int>> domain;
-  std::vector<std::vector<bool>> availDom;
+  bool* domain;
+  int *lenDom;
   
-  Node(size_t N, std::vector<std::vector<int>> dom, std::vector<std::vector<bool>> availDom): depth(0), value(N), domain(dom), availDom(availDom){
+  Node(size_t N, bool* domain, int *lenDom): depth(0), value(N), domain(domain), lenDom(lenDom){
     for (int i = 0; i < N; i++) {
       value[i] = 0;
     }
@@ -20,10 +20,44 @@ struct Node {
   Node(const Node&) = default;
   Node(Node&&) = default;
   Node() = default;
+
+  public:
+
+  void printLenDom(){
+    for(int i = 0; i < value.size(); i++){
+      std::cout << lenDom[i] << " ";
+    }
+    std::cout << std::endl;
+  }
+
+  int getindexes(int variable){
+    if(variable == -1)
+      return 0;
+    else
+      return lenDom[variable];
+  }
+
+  bool getAvail(int index)
+  {
+    return domain[index];
+  }
+
+  void turnToFalse(int index)
+  {
+    domain[index] = false;
+  }
+
+  void printValue(){
+    for(int i = 0; i < value.size(); i++){
+      std::cout << value[i] << " ";
+    }
+    std::cout << std::endl;
+  }
+
 };
 
 // Function to generate arrays based on upper bounds
-std::vector<std::vector<int>> generateArrays(int* ub, size_t size) {
+int generateArrays(int* ub, size_t size, int *lenDom) {
     std::vector<std::vector<int>> arrays(size);
     for (size_t i = 0; i < size; ++i) {
         arrays[i].resize(ub[i] + 1);
@@ -31,25 +65,27 @@ std::vector<std::vector<int>> generateArrays(int* ub, size_t size) {
             arrays[i][j] = j;
         }
     }
-    return arrays;
+    lenDom[0] = arrays[0].size();
+    int sum = arrays[0].size();
+
+    for(int i = 1; i < size; i++){
+        lenDom[i] = lenDom[i-1] + arrays[i].size();
+        sum += arrays[i].size();
+    }
+    return sum;
 }
 
-std::vector<std::vector<bool>> generateBoolDom(int* ub, size_t size) {
-    std::vector<std::vector<bool>> arrays(size);
-    for (size_t i = 0; i < size; ++i) {
-        arrays[i].resize(ub[i] + 1);
-        for (int j = 0; j <= ub[i]; ++j) {
-            arrays[i][j] = true;
-        }
+void generateDomain(int* ub, size_t size, bool* domain, int domainSize) {
+    for (size_t i = 0; i < domainSize;++i) {
+      domain[i] = true;
     }
-    return arrays;
 }
+
 
 bool isSafe(const std::vector<int>& values, const int j, int **C, const int depth)
 {
   for (int i = 0; i < depth; i++) {
     if (C[i][depth] == 1 && values[i] == j) {
-
       return false;
     }
   }
@@ -58,36 +94,39 @@ bool isSafe(const std::vector<int>& values, const int j, int **C, const int dept
 
 // evaluate a given node (i.e., check its board configuration) and branch it if it is valid
 // (i.e., generate its child nodes.)
-void evaluate_and_branch(const Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, int **C, int &count)
+void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, int **C, int &count)
 {
   int depth = parent.depth;
   int N = parent.value.size();
 
+  int j;
   // if the given node is a leaf, then update counter and do nothing
   if (depth == N) {
     num_sol++;
-    // for (auto it = parent.value.begin(); it != parent.value.end(); ++it)
-    // {
-    //   std::cout << " " << *it;
-    // }
-    // std::cout << ", " << num_sol << " sol found" << std::endl;
   }
 
   // if the given node is not a leaf, then update counter and evaluate/branch it
   else {
-    //for (int j = 0; j <= parent.domain[parent.depth].size(); j++) {
-    for(auto j = parent.domain[parent.depth].begin(); j != parent.domain[parent.depth].end(); j++){
-      //if(!parent.availDom[parent.depth][*j]) count++;
-      if (parent.availDom[parent.depth][*j] && isSafe(parent.value, *j, C, parent.depth)) {
+    for(j = parent.getindexes(depth-1); j < parent.getindexes(depth); j++){
+      int j_rel = j-parent.getindexes(depth-1);
+      // print j_rel
+      std::cout << "j_rel for j " << j_rel << ", " << j << ", depth: " << depth << std::endl;
+      // if(depth==1){
+      // std::cout << "AAAA" << isSafe(parent.value, j, C, parent.depth) << std::endl;
+      // return;}
+      if (isSafe(parent.value, j_rel, C, parent.depth)) {
         Node child(parent);
         //std::swap(child.value[depth], child.value[j]);
         for (int i=depth; i<N; i++){
           if (C[i][depth] == 1) {
-            child.availDom[i][*j] = false;
+            child.turnToFalse(j_rel);
           }
         }
-        child.value[depth] = *j;
+        child.value[depth] = j_rel;
         child.depth++;
+        std::cout << std::endl;
+        std::cout << "Now evaluate: " << std::endl;
+        child.printValue();
         pool.push(std::move(child));
         tree_loc++;
       }
@@ -110,9 +149,10 @@ int main(int argc, char** argv) {
     std::cout << "Solving " << N << " sized generic problem\n" << std::endl;
 
     // use data generated by the parser
+    bool* domain;
+    int domainSize = 0;
+    int lenDom[N];
 
-    std::vector<std::vector<int>> domain;
-    std::vector<std::vector<bool>> availDom;
     int **C;
 
     Data data;
@@ -127,8 +167,13 @@ int main(int argc, char** argv) {
 
         // get the upper bound
         int *ub = data.get_u();
-        domain = generateArrays(ub, N);
-        availDom = generateBoolDom(ub, N);
+        domainSize = generateArrays(ub, N, lenDom);
+
+        std::cout << "Domain size: " << domainSize << std::endl;
+
+        domain = new bool[domainSize];
+
+        generateDomain(ub, N, domain, domainSize);
 
         // get the constraint matrix
         C = data.get_C();
@@ -138,8 +183,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+
     // initialization of the root node (the board configuration where no queen is placed)
-    Node root(N, domain, availDom);
+    Node root(N, domain, lenDom);
 
     // initialization of the pool of nodes (stack -> DFS exploration order)
     std::stack<Node> pool;
