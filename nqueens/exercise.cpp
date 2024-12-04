@@ -8,33 +8,76 @@
 
 struct Node {
   int depth; // depth in the tree
-  std::vector<int> value;// configration for that node
-  bool* domain;
-  int *lenDom;
-  
-  Node(size_t N, bool* domain, int *lenDom): depth(0), value(N), domain(domain), lenDom(lenDom){
-    for (int i = 0; i < N; i++) {
-      value[i] = 0;
+    std::vector<int> value; // configuration for that node
+    bool* domain;
+    int* lenDom;
+    int domSize;
+
+    // Constructor
+    Node(size_t N, int* lenDom, int domSize)
+        : depth(0), value(N), lenDom(lenDom), domSize(domSize) {
+        domain = new bool[domSize];
+        for (int i = 0; i < domSize; i++) {
+            domain[i] = true; // Initialize domain to true
+        }
     }
-  }
-  Node(const Node&) = default;
-  Node(Node&&) = default;
-  Node() = default;
+
+    // Copy Constructor (Deep Copy)
+    Node(const Node& other)
+        : depth(other.depth), value(other.value), lenDom(other.lenDom), domSize(other.domSize) {
+        domain = new bool[domSize];
+        std::copy(other.domain, other.domain + domSize, domain);
+    }
+
+    // Move Constructor
+    Node(Node&& other) noexcept
+        : depth(other.depth), value(std::move(other.value)), domain(other.domain), lenDom(other.lenDom), domSize(other.domSize) {
+        other.domain = nullptr;
+    }
+
+    // Destructor
+    ~Node() {
+        delete[] domain;
+    }
+
+    // Assignment Operator (Deep Copy)
+    Node& operator=(const Node& other) {
+        if (this != &other) {
+            depth = other.depth;
+            value = other.value;
+            lenDom = other.lenDom;
+            domSize = other.domSize;
+
+            delete[] domain;
+            domain = new bool[domSize];
+            std::copy(other.domain, other.domain + domSize, domain);
+        }
+        return *this;
+    }
+
+    // Move Assignment Operator
+    Node& operator=(Node&& other) noexcept {
+        if (this != &other) {
+            depth = other.depth;
+            value = std::move(other.value);
+            lenDom = other.lenDom;
+            domSize = other.domSize;
+
+            delete[] domain;
+            domain = other.domain;
+            other.domain = nullptr;
+        }
+        return *this;
+    }
 
   public:
 
+  // Right methods
   void printLenDom(){
     for(int i = 0; i < value.size(); i++){
       std::cout << lenDom[i] << " ";
     }
     std::cout << std::endl;
-  }
-
-  int getindexes(int variable){
-    if(variable == -1)
-      return 0;
-    else
-      return lenDom[variable];
   }
 
   bool getAvail(int index)
@@ -47,11 +90,63 @@ struct Node {
     domain[index] = false;
   }
 
+  int take_value_of_singleton(int var){
+    for(int i=lenDom[var-1]; i<lenDom[var]; i++){
+      if(domain[i]){
+        // std::cout << "Var: " << var << ", position: " << i << " and is " << domain[i] << std::endl;
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  int takeFirstNotSingDomain(){
+    for(depth=0; depth<value.size(); depth++){
+      int count = 0;
+      for(int dom_n=lenDom[depth-1]; dom_n<lenDom[depth]; dom_n++){
+        if(domain[dom_n]) count++;
+        if (count == 2) return depth;
+      }
+    }
+    return -1;
+  }
+
+  bool checkPossibleInstantiation(int abs_index){
+    return domain[abs_index];
+  }
+
+  void enforceSingleton(int var, int value){
+    for(int i=lenDom[var-1]; i<lenDom[var]; i++){
+      if (i != value) {
+        domain[i] = false;
+      }
+    }
+  }
+  
   void printValue(){
     for(int i = 0; i < value.size(); i++){
       std::cout << value[i] << " ";
     }
     std::cout << std::endl;
+  }
+
+  void printAvail(){
+    for(int i = 0; i < domSize; i++){
+      std::cout << domain[i] << " ";
+    }
+    std::cout << std::endl;
+  }
+
+  int count_singleton(){
+    int singleton = 0;
+    for(int var=0; var<value.size(); var++){
+      int count = 0;
+      for(int dom_n=lenDom[var-1]; dom_n<lenDom[var]; dom_n++){
+        if(domain[dom_n]) count++;
+      }
+      if(count == 1) singleton++;
+    }
+    return singleton;
   }
 
 };
@@ -92,48 +187,82 @@ bool isSafe(const std::vector<int>& values, const int j, int **C, const int dept
   return true;
 }
 
-// evaluate a given node (i.e., check its board configuration) and branch it if it is valid
-// (i.e., generate its child nodes.)
-void evaluate_and_branch(Node& parent, std::stack<Node>& pool, size_t& tree_loc, size_t& num_sol, int **C, int &count)
-{
-  int depth = parent.depth;
-  int N = parent.value.size();
 
-  int j;
-  // if the given node is a leaf, then update counter and do nothing
-  if (depth == N) {
-    num_sol++;
-  }
+void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, int **C){
 
-  // if the given node is not a leaf, then update counter and evaluate/branch it
-  else {
-    for(j = parent.getindexes(depth-1); j < parent.getindexes(depth); j++){
-      int j_rel = j-parent.getindexes(depth-1);
-      // print j_rel
-      std::cout << "j_rel for j " << j_rel << ", " << j << ", depth: " << depth << std::endl;
-      // if(depth==1){
-      // std::cout << "AAAA" << isSafe(parent.value, j, C, parent.depth) << std::endl;
-      // return;}
-      if (isSafe(parent.value, j_rel, C, parent.depth)) {
-        Node child(parent);
-        //std::swap(child.value[depth], child.value[j]);
-        for (int i=depth; i<N; i++){
-          if (C[i][depth] == 1) {
-            child.turnToFalse(j_rel);
+  int numberOfSingleton = node.count_singleton();
+
+  bool singleton_gen = true;
+  while(singleton_gen){
+    singleton_gen = false;
+
+    // std::cout << "The available values are: " << std::endl;
+    // node.printAvail();
+    // std::cout << std::endl;
+    for(int var=0; var<N; var++){
+      int count = 0;
+
+      // std::cout << "Variable: " << var << std::endl;
+      // std::cout << "Going from " << node.lenDom[var-1] << " to " << node.lenDom[var] << std::endl;
+      for(int dom_numb=node.lenDom[var-1]; dom_numb<node.lenDom[var]; dom_numb++){
+        if(node.getAvail(dom_numb)){
+          count++;
+        }
+      }
+
+      if (count == 1){
+        int value_of_singleton = node.take_value_of_singleton(var) - node.lenDom[var-1]; // Gives the postion of the singleton, relative to the domain of its variable.
+        // std::cout << "Value of singleton: " << value_of_singleton << " for variable " << var << std::endl;
+        if(value_of_singleton == -1) {std::cout << "Problem with finding a singleton " << std::endl; return;}
+
+        for(int other_dom=0; other_dom<N; other_dom++){
+          if(C[var][other_dom] == 1 && value_of_singleton<node.lenDom[other_dom]){
+            node.turnToFalse(node.lenDom[other_dom-1]+value_of_singleton);
+            int newNumbSing = node.count_singleton();
+            // std::cout << "New number of singletons: " << newNumbSing << std::endl;
+            if(newNumbSing > numberOfSingleton){
+              singleton_gen = true;
+              numberOfSingleton = newNumbSing;
+            }
           }
         }
-        child.value[depth] = j_rel;
-        child.depth++;
-        std::cout << std::endl;
-        std::cout << "Now evaluate: " << std::endl;
-        child.printValue();
-        pool.push(std::move(child));
-        tree_loc++;
+      }
+      else if (count == 0) return;
+      else {
+        // std::cout << "No singleton for variable " << var << std::endl;
       }
     }
+  
   }
-}
 
+  if(node.count_singleton() == N){
+    num_sol++;
+    return;
+  }
+
+  int first_not_sing_domain = node.takeFirstNotSingDomain(); 
+  if(first_not_sing_domain == -1){
+    std::cout << "Problem with the domain " << std::endl;
+  }
+  // std::cout << "First not singleton domain: " << first_not_sing_domain << std::endl;
+  
+
+  // Branch
+  // std::cout << "Branching" << std::endl << std::endl;
+  for(int index=node.lenDom[first_not_sing_domain-1]; index<node.lenDom[first_not_sing_domain]; index++){
+    // print the avail values of node
+    // std::cout << "The available values for the iter " << index << " are: " << std::endl;
+    // node.printAvail();
+    if(node.checkPossibleInstantiation(index)){
+      Node child(node);
+      child.value[first_not_sing_domain] = index;
+      child.enforceSingleton(first_not_sing_domain, index);
+      child.depth++;
+      pool.push(std::move(child));
+    }
+  }
+
+}
 
 int main(int argc, char** argv) {
 
@@ -169,7 +298,7 @@ int main(int argc, char** argv) {
         int *ub = data.get_u();
         domainSize = generateArrays(ub, N, lenDom);
 
-        std::cout << "Domain size: " << domainSize << std::endl;
+        std::cout << "Domain size: " << domainSize << std::endl << std::endl;
 
         domain = new bool[domainSize];
 
@@ -185,14 +314,13 @@ int main(int argc, char** argv) {
 
 
     // initialization of the root node (the board configuration where no queen is placed)
-    Node root(N, domain, lenDom);
+    Node root(N, lenDom, domainSize);
 
     // initialization of the pool of nodes (stack -> DFS exploration order)
     std::stack<Node> pool;
     pool.push(std::move(root));
 
     // statistics to check correctness (number of nodes explored and number of solutions found)
-    size_t exploredTree = 0;
     size_t exploredSol = 0;
 
     // beginning of the Depth-First tree-Search
@@ -205,8 +333,7 @@ int main(int argc, char** argv) {
         Node currentNode(std::move(pool.top()));
         pool.pop();
 
-        // check the board configuration of the node and branch it if it is valid.
-        evaluate_and_branch(currentNode, pool, exploredTree, exploredSol, C, count);
+        fixpoint_iter(currentNode, pool, N, exploredSol, C);
     }
 
     auto end = std::chrono::steady_clock::now();
@@ -217,7 +344,6 @@ int main(int argc, char** argv) {
     // outputs
     std::cout << "Time taken: " << duration.count() << " milliseconds" << std::endl;
     std::cout << "Total solutions: " << exploredSol << std::endl;
-    std::cout << "Size of the explored tree: " << exploredTree << std::endl;
 
     return 0;
 }
