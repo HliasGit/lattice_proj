@@ -191,6 +191,7 @@ bool isSafe(const std::vector<int>& values, const int j, int **C, const int dept
 void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, int **C){
 
   int numberOfSingleton = node.count_singleton();
+  // std::cout << "Number of singletons: " << numberOfSingleton << std::endl;
 
   bool singleton_gen = true;
   while(singleton_gen){
@@ -211,15 +212,18 @@ void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, i
       }
 
       if (count == 1){
-        int value_of_singleton = node.take_value_of_singleton(var) - node.lenDom[var-1]; // Gives the postion of the singleton, relative to the domain of its variable.
-        // std::cout << "Value of singleton: " << value_of_singleton << " for variable " << var << std::endl;
-        if(value_of_singleton == -1) {std::cout << "Problem with finding a singleton " << std::endl; return;}
+        int value_of_singleton_abs = node.take_value_of_singleton(var);
+        int value_of_singleton_rel = node.take_value_of_singleton(var) - node.lenDom[var-1]; // Gives the postion of the singleton, relative to the domain of its variable.
+        //std::cout << "Value of singleton: " << value_of_singleton_rel << " for variable " << var << std::endl;
+        if(value_of_singleton_rel == -1) {std::cout << "Problem with finding a singleton " << std::endl; return;}
 
         for(int other_dom=0; other_dom<N; other_dom++){
-          if(C[var][other_dom] == 1 && value_of_singleton<node.lenDom[other_dom]){
-            node.turnToFalse(node.lenDom[other_dom-1]+value_of_singleton);
+          //std::cout << "other_dom " << other_dom << std::endl; 
+
+          if(C[var][other_dom] == 1 && value_of_singleton_rel<(node.lenDom[other_dom]-node.lenDom[other_dom-1])){
+            node.turnToFalse(node.lenDom[other_dom-1]+value_of_singleton_rel);
             int newNumbSing = node.count_singleton();
-            // std::cout << "New number of singletons: " << newNumbSing << std::endl;
+            //std::cout << "New number of singletons: " << newNumbSing << std::endl;
             if(newNumbSing > numberOfSingleton){
               singleton_gen = true;
               numberOfSingleton = newNumbSing;
@@ -297,6 +301,7 @@ int main(int argc, char** argv) {
         // get the upper bound
         int *ub = data.get_u();
         domainSize = generateArrays(ub, N, lenDom);
+        domainSize++;
 
         std::cout << "Domain size: " << domainSize << std::endl << std::endl;
 
