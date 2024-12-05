@@ -170,13 +170,6 @@ int generateArrays(int* ub, size_t size, int *lenDom) {
     return sum;
 }
 
-void generateDomain(int* ub, size_t size, bool* domain, int domainSize) {
-    for (size_t i = 0; i < domainSize;++i) {
-      domain[i] = true;
-    }
-}
-
-
 bool isSafe(const std::vector<int>& values, const int j, int **C, const int depth)
 {
   for (int i = 0; i < depth; i++) {
@@ -190,41 +183,34 @@ bool isSafe(const std::vector<int>& values, const int j, int **C, const int dept
 
 void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, int **C){
 
-  int numberOfSingleton = node.count_singleton();
-  // std::cout << "Number of singletons: " << numberOfSingleton << std::endl;
+  int numberOfSingleton = node.count_singleton(); // Get the number of singletons so far
 
   bool singleton_gen = true;
-  while(singleton_gen){
+  while(singleton_gen){ // Enter the loop
     singleton_gen = false;
 
-    // std::cout << "The available values are: " << std::endl;
-    // node.printAvail();
-    // std::cout << std::endl;
-    for(int var=0; var<N; var++){
+    for(int var=0; var<N; var++){ // Loop over the variables
       int count = 0;
 
-      // std::cout << "Variable: " << var << std::endl;
-      // std::cout << "Going from " << node.lenDom[var-1] << " to " << node.lenDom[var] << std::endl;
       for(int dom_numb=node.lenDom[var-1]; dom_numb<node.lenDom[var]; dom_numb++){
-        if(node.getAvail(dom_numb)){
+        if(node.getAvail(dom_numb)){ // Check how many values of the domain are available
           count++;
         }
       }
 
-      if (count == 1){
-        int value_of_singleton_abs = node.take_value_of_singleton(var);
+      if (count == 1){ // If only one than the domain is singleton
         int value_of_singleton_rel = node.take_value_of_singleton(var) - node.lenDom[var-1]; // Gives the postion of the singleton, relative to the domain of its variable.
-        //std::cout << "Value of singleton: " << value_of_singleton_rel << " for variable " << var << std::endl;
-        if(value_of_singleton_rel == -1) {std::cout << "Problem with finding a singleton " << std::endl; return;}
+        if(value_of_singleton_rel == -1) {
+          std::cout << "Problem with finding a singleton " << std::endl;
+          return;
+        }
 
-        for(int other_dom=0; other_dom<N; other_dom++){
-          //std::cout << "other_dom " << other_dom << std::endl; 
+        for(int other_dom=0; other_dom<N; other_dom++){ // Loop over the other variables
 
-          if(C[var][other_dom] == 1 && value_of_singleton_rel<(node.lenDom[other_dom]-node.lenDom[other_dom-1])){
-            node.turnToFalse(node.lenDom[other_dom-1]+value_of_singleton_rel);
-            int newNumbSing = node.count_singleton();
-            //std::cout << "New number of singletons: " << newNumbSing << std::endl;
-            if(newNumbSing > numberOfSingleton){
+          if(value_of_singleton_rel<(node.lenDom[other_dom]-node.lenDom[other_dom-1]) && C[var][other_dom] == 1){ // If the constraint is satisfied and the value of the singleton is less than the length of the domain of the variable compared
+            node.turnToFalse(node.lenDom[other_dom-1]+value_of_singleton_rel); // Remove the value from the domain of the other variable
+            int newNumbSing = node.count_singleton(); // Count again the number of singletons
+            if(newNumbSing > numberOfSingleton){ //If it changed than the fixpoint made another singleton so we can remove other values from the domains
               singleton_gen = true;
               numberOfSingleton = newNumbSing;
             }
@@ -239,24 +225,18 @@ void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, i
   
   }
 
-  if(node.count_singleton() == N){
+  if(node.count_singleton() == N){ // A solution is found when all the variables have singleton domains
     num_sol++;
     return;
   }
 
-  int first_not_sing_domain = node.takeFirstNotSingDomain(); 
+  int first_not_sing_domain = node.takeFirstNotSingDomain(); // Take the first variable that has no singleton domain 
   if(first_not_sing_domain == -1){
     std::cout << "Problem with the domain " << std::endl;
-  }
-  // std::cout << "First not singleton domain: " << first_not_sing_domain << std::endl;
-  
+  }  
 
-  // Branch
-  // std::cout << "Branching" << std::endl << std::endl;
+  // Branch and bound the latter
   for(int index=node.lenDom[first_not_sing_domain-1]; index<node.lenDom[first_not_sing_domain]; index++){
-    // print the avail values of node
-    // std::cout << "The available values for the iter " << index << " are: " << std::endl;
-    // node.printAvail();
     if(node.checkPossibleInstantiation(index)){
       Node child(node);
       child.value[first_not_sing_domain] = index;
@@ -276,7 +256,6 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-
     // number of elements to treat
     size_t N = std::stoll(argv[1]);
     std::cout << "Solving " << N << " sized generic problem\n" << std::endl;
@@ -286,28 +265,23 @@ int main(int argc, char** argv) {
     int domainSize = 0;
     int lenDom[N];
 
+    // Constraint matrix
     int **C;
 
+    // Read the input file
     Data data;
     std::ostringstream filename;
     filename << "pco_" << N << ".txt";
 
-    // Use the dynamically constructed filename in the data.read_input function call
     if (data.read_input(filename.str().c_str())) {
-        // print the number of elements
         std::cout << "Number of elements: " << data.get_n() << std::endl;
         N = data.get_n();
 
-        // get the upper bound
-        int *ub = data.get_u();
+        int *ub = data.get_u(); // Upper bounds
         domainSize = generateArrays(ub, N, lenDom);
         domainSize++;
 
         std::cout << "Domain size: " << domainSize << std::endl << std::endl;
-
-        domain = new bool[domainSize];
-
-        generateDomain(ub, N, domain, domainSize);
 
         // get the constraint matrix
         C = data.get_C();
@@ -317,34 +291,29 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-
-    // initialization of the root node (the board configuration where no queen is placed)
+    // Initialization of the root node
     Node root(N, lenDom, domainSize);
 
-    // initialization of the pool of nodes (stack -> DFS exploration order)
+    // Initialization of the pool of nodes
     std::stack<Node> pool;
     pool.push(std::move(root));
 
-    // statistics to check correctness (number of nodes explored and number of solutions found)
+    // Statistics to check correctness
     size_t exploredSol = 0;
 
-    // beginning of the Depth-First tree-Search
+    // Beginning of the Depth-First tree-Search
     auto start = std::chrono::steady_clock::now();
 
-    int count = 0;
-
+    // Start the fix-point iteration
     while (pool.size() != 0) {
-        // get a node from the pool
-        Node currentNode(std::move(pool.top()));
-        pool.pop();
+        Node currentNode(std::move(pool.top())); // Get the top of the stack
+        pool.pop(); // Remove the top of the stack
 
-        fixpoint_iter(currentNode, pool, N, exploredSol, C);
+        fixpoint_iter(currentNode, pool, N, exploredSol, C); // Fix-point iteration
     }
 
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-
-    //std::cout << "Count " << count << std::endl;
+    auto end = std::chrono::steady_clock::now(); // End of the search
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start); // Duration of the search
 
     // outputs
     std::cout << "Time taken: " << duration.count() << " milliseconds" << std::endl;
