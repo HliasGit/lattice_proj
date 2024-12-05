@@ -7,71 +7,6 @@
 
 #include "parser.hpp"
 
-
-__global__ void parallel(bool* domain, int* lenDom, int *singletonFlags, int **C, int N, int domSize, int *numberOfSingleton, int var){
-
-    int other_dom = threadIdx.x; 
-    other_dom = (other_dom < N) ? other_dom : 0;
-
-    int count = 0;
-
-    // std::cout << "Variable: " << var << std::endl;
-    // std::cout << "Going from " << node.lenDom[var-1] << " to " << node.lenDom[var] << std::endl;
-    for(int dom_numb=lenDom[var-1]; dom_numb<lenDom[var]; dom_numb++){
-      if(domain[dom_numb]){
-        count++;
-      }
-    }
-
-
-    if (count == 1){
-
-      int value_of_singleton_abs = 0;
-      for(int i=lenDom[var-1]; i<lenDom[var]; i++){
-        if(domain[i]){
-          // std::cout << "Var: " << var << ", position: " << i << " and is " << domain[i] << std::endl;
-          value_of_singleton_abs = i;
-          break;
-        }
-      }
-
-      int value_of_singleton_rel = value_of_singleton_abs - lenDom[var-1]; // Gives the postion of the singleton, relative to the domain of its variable.
-      //std::cout << "Value of singleton: " << value_of_singleton_rel << " for variable " << var << std::endl;
-      if(value_of_singleton_rel == -1) {
-        //std::cout << "Problem with finding a singleton " << std::endl;
-        return;
-      }
-
-
-      for(int other_dom=0; other_dom<N; other_dom++){
-        //std::cout << "other_dom " << other_dom << std::endl; 
-
-        if(C[var][other_dom] == 1 && value_of_singleton_rel<(lenDom[other_dom]-lenDom[other_dom-1])){
-          domain[lenDom[other_dom-1]+value_of_singleton_rel] = false;
-
-          int singleton = 0;
-          for(int var=0; var<N; var++){
-            int count = 0;
-            for(int dom_n=lenDom[var-1]; dom_n<lenDom[var]; dom_n++){
-              if(domain[dom_n]) count++;
-            }
-            if(count == 1) singleton++;
-          }
-          //std::cout << "New number of singletons: " << newNumbSing << std::endl;
-          if(singleton > numberOfSingleton[0]){
-            singletonFlags[0] = true;
-            numberOfSingleton[0] = singleton;
-          }
-        }
-      }
-    }
-    else if (count == 0) return;
-    else {
-      // std::cout << "No singleton for variable " << var << std::endl;
-    }
-  
-}
-
 struct Node {
   int depth; // depth in the tree
     std::vector<int> value; // configuration for that node
@@ -236,13 +171,6 @@ int generateArrays(int* ub, size_t size, int *lenDom) {
     return sum;
 }
 
-void generateDomain(int* ub, size_t size, bool* domain, int domainSize) {
-    for (size_t i = 0; i < domainSize;++i) {
-      domain[i] = true;
-    }
-}
-
-
 bool isSafe(const std::vector<int>& values, const int j, int **C, const int depth)
 {
   for (int i = 0; i < depth; i++) {
@@ -253,61 +181,109 @@ bool isSafe(const std::vector<int>& values, const int j, int **C, const int dept
   return true;
 }
 
+__device__ int getDomain(int* lenghtsOfDom, int value){
+  if(value == -1) return 0;
+  else return lenghtsOfDom[value];
+}
 
-void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, int **C){
+__global__ void parallelSetting(int var, int value_of_singleton_rel, int* lenghtsOfDom, bool *domain, int* C, int N){
+  int other_var = threadIdx.x;
 
-  int numberOfSingleton = node.count_singleton();
-  // std::cout << "Number of singletons: " << numberOfSingleton << std::endl;
-  int count = 0;
+  if(var == other_var){
+  
+  } else {
+    // printf("SONO QUA 2");
+    if(value_of_singleton_rel<(getDomain(lenghtsOfDom, (other_var))-getDomain(lenghtsOfDom, (other_var-1))) && C[var*N+other_var] == 1){ // If the constraint is satisfied and the value of the singleton is less than the length of the domain of the variable compared
+      // printf("SONO QUA 3");
+      domain[getDomain(lenghtsOfDom, (other_var-1))+value_of_singleton_rel] = false; // Remove the value from the domain of the other variable
+    }
+  }
+}
+
+
+void fixpoint_iter(Node &node, std::stack<Node>& pool, int N, size_t &num_sol, int **C, int* C_lin, int* d_C) {
+
+  int numberOfSingleton = node.count_singleton(); // Get the number of singletons so far
 
   bool singleton_gen = true;
-  while(singleton_gen){
+  while(singleton_gen){ // Enter the loop
     singleton_gen = false;
 
-    std::cout << "The available values are: " << std::endl;
-    node.printAvail();
-    std::cout << std::endl;
+    for(int var=0; var<N; var++){ // Loop over the variables
+      int count = 0;
+
+      for(int dom_numb=node.lenDom[var-1]; dom_numb<node.lenDom[var]; dom_numb++){
+        if(node.getAvail(dom_numb)){ // Check how many values of the domain are available
+          count++;
+        }
+      }
+
+      if (count == 1){ // If only one than the domain is singleton
+        int value_of_singleton_rel = node.take_value_of_singleton(var) - node.lenDom[var-1]; // Gives the postion of the singleton, relative to the domain of its variable.
+        if(value_of_singleton_rel == -1) {
+          std::cout << "Problem with finding a singleton " << std::endl;
+          return;
+        }
+
+        int *d_length_of_dom;
+        bool *d_domain;
+
+        // Allocate memory for the device
+        cudaMalloc(&d_length_of_dom, N*sizeof(int));
+        cudaMalloc(&d_domain, node.domSize*sizeof(bool));
+        
+
+        cudaMemcpy(d_length_of_dom, node.lenDom, N*sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_domain, node.domain, node.domSize*sizeof(bool), cudaMemcpyHostToDevice);
+
+        // Here I need to give to every thread (except when var == other_var) one variable
+        parallelSetting<<<1,N>>>(var, value_of_singleton_rel, d_length_of_dom, d_domain, d_C, N);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            printf("CUDA Error: %s\n", cudaGetErrorString(err));
+        }
+        cudaDeviceSynchronize();
+
+        cudaMemcpy(node.domain, d_domain, node.domSize*sizeof(bool), cudaMemcpyDeviceToHost);
+
+        cudaFree(d_length_of_dom);
+        cudaFree(d_domain);
+
+        int newNumbSing = node.count_singleton(); // Count again the number of singletons
 
 
-    for(int var=0; var<N; var++ ){
-      int* d_singletonFlags;
-      int* d_nSing;
 
-      cudaMallocManaged(&node.domain, node.domSize * sizeof(bool));
-      cudaMallocManaged(&node.lenDom, N * sizeof(int));
-      cudaMallocManaged(&d_singletonFlags, sizeof(int));
-      cudaMallocManaged(&C, N * N * sizeof(int*));
-      cudaMallocManaged(&d_nSing, 1 * sizeof(int*));
-
-      parallel<<<1,N>>>(node.domain, node.lenDom, d_singletonFlags, C, N, node.domSize, d_nSing, var);
-      cudaDeviceSynchronize();
-
-      singleton_gen = d_singletonFlags[0];
+        if(newNumbSing > numberOfSingleton){ //If it changed than the fixpoint made another singleton so we can remove other values from the domains
+          singleton_gen = true;
+          numberOfSingleton = newNumbSing;
+        }
+        
+      }
+      else if (count == 0) return;
+      else {
+        // std::cout << "No singleton for variable " << var << std::endl;
+      }
     }
-
-    
-    if (count == 2) exit(1);
-    count++;
+  
   }
 
-  if(node.count_singleton() == N){
+  if(node.count_singleton() == N){ // A solution is found when all the variables have singleton domains
     num_sol++;
+    // every 100000 solutions print the solution
+    if(num_sol % 100000 == 0){
+      std::cout << "Solution found: " << num_sol << std::endl;
+    }
     return;
   }
 
-  int first_not_sing_domain = node.takeFirstNotSingDomain(); 
+  int first_not_sing_domain = node.takeFirstNotSingDomain(); // Take the first variable that has no singleton domain 
   if(first_not_sing_domain == -1){
     std::cout << "Problem with the domain " << std::endl;
-  }
-  // std::cout << "First not singleton domain: " << first_not_sing_domain << std::endl;
-  
+  }  
 
-  // Branch
-  // std::cout << "Branching" << std::endl << std::endl;
+  // Branch and bound the latter
   for(int index=node.lenDom[first_not_sing_domain-1]; index<node.lenDom[first_not_sing_domain]; index++){
-    // print the avail values of node
-    // std::cout << "The available values for the iter " << index << " are: " << std::endl;
-    // node.printAvail();
+    // std::cout << "Branching " << index << ", for variable: " << first_not_sing_domain << std::endl;
     if(node.checkPossibleInstantiation(index)){
       Node child(node);
       child.value[first_not_sing_domain] = index;
@@ -327,38 +303,31 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-
     // number of elements to treat
     size_t N = std::stoll(argv[1]);
     std::cout << "Solving " << N << " sized generic problem\n" << std::endl;
 
     // use data generated by the parser
-    bool* domain;
     int domainSize = 0;
     int lenDom[N];
 
+    // Constraint matrix
     int **C;
 
+    // Read the input file
     Data data;
     std::ostringstream filename;
     filename << "pco_" << N << ".txt";
 
-    // Use the dynamically constructed filename in the data.read_input function call
     if (data.read_input(filename.str().c_str())) {
-        // print the number of elements
         std::cout << "Number of elements: " << data.get_n() << std::endl;
         N = data.get_n();
 
-        // get the upper bound
-        int *ub = data.get_u();
+        int *ub = data.get_u(); // Upper bounds
         domainSize = generateArrays(ub, N, lenDom);
-        domainSize++;
+        
 
         std::cout << "Domain size: " << domainSize << std::endl << std::endl;
-
-        domain = new bool[domainSize];
-
-        generateDomain(ub, N, domain, domainSize);
 
         // get the constraint matrix
         C = data.get_C();
@@ -368,36 +337,44 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    int *C_lin = new int[N*N];
 
-    // initialization of the root node (the board configuration where no queen is placed)
+    for(int i=0; i<N; i++){
+      for(int j=0; j<N; j++){
+        C_lin[i*N+j] = C[i][j];
+      }
+    }
+
+    int *d_C;
+
+    cudaMalloc(&d_C, N*N*sizeof(int));
+    cudaMemcpy(d_C, C_lin, N*N*sizeof(int), cudaMemcpyHostToDevice);
+
+    // Initialization of the root node
     Node root(N, lenDom, domainSize);
 
-    // initialization of the pool of nodes (stack -> DFS exploration order)
+    // Initialization of the pool of nodes
     std::stack<Node> pool;
     pool.push(std::move(root));
 
-    // statistics to check correctness (number of nodes explored and number of solutions found)
+    // Statistics to check correctness
     size_t exploredSol = 0;
 
-    // beginning of the Depth-First tree-Search
+    // Beginning of the Depth-First tree-Search
     auto start = std::chrono::steady_clock::now();
 
-    int count = 0;
-
+    // Start the fix-point iteration
     while (pool.size() != 0) {
-        // get a node from the pool
-        Node currentNode(std::move(pool.top()));
-        pool.pop();
+        Node currentNode(std::move(pool.top())); // Get the top of the stack
+        pool.pop(); // Remove the top of the stack
 
-        fixpoint_iter(currentNode, pool, N, exploredSol, C);
-        count ++;
-        if (count==1) exit(1);
+        fixpoint_iter(currentNode, pool, N, exploredSol, C, C_lin, d_C); // Fix-point iteration
     }
 
-    auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    cudaFree(d_C);
 
-    //std::cout << "Count " << count << std::endl;
+    auto end = std::chrono::steady_clock::now(); // End of the search
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start); // Duration of the search
 
     // outputs
     std::cout << "Time taken: " << duration.count() << " milliseconds" << std::endl;
